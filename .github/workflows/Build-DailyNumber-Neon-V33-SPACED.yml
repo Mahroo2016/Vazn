@@ -1,0 +1,541 @@
+name: Build APK - DailyNumber Neon V33 - SPACED
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Android project
+        shell: bash
+        run: |
+          set -e
+          mkdir -p app/src/main/java/com/example/dailynumber
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/xml
+
+          mkdir -p app/src/main/res/drawable
+          cat > app/src/main/res/drawable/ic_launcher.xml <<'XML'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#16002E" android:pathData="M0,0h108v108h-108z"/>
+              <path android:fillColor="#7B2CBF" android:pathData="M12,18h84a12,12 0,0 1,12 12v48a12,12 0,0 1,-12 12h-84a12,12 0,0 1,-12 -12v-48a12,12 0,0 1,12 -12z"/>
+              <path android:fillColor="#FFFFFF" android:pathData="M28,54l15,15 37,-37 -7,-7 -30,30 -8,-8z"/>
+              <path android:fillColor="#FFD166" android:pathData="M46,70h16v8h-16z"/>
+          </vector>
+          XML
+
+          cat > gradle.properties <<'PROPERTIES'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.enableJetifier=true
+          PROPERTIES
+
+          cat > settings.gradle <<'GRADLE'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "DailyNumber"
+          include(":app")
+          GRADLE
+
+          cat > build.gradle <<'GRADLE'
+          plugins {
+              id 'com.android.application' version '8.6.1' apply false
+          }
+          GRADLE
+
+          cat > app/build.gradle <<'GRADLE'
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.example.dailynumber'
+              compileSdk 35
+              defaultConfig {
+                  applicationId 'com.example.dailynumber'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 33
+                  versionName '3.3'
+              }
+          }
+          dependencies {
+              implementation 'androidx.core:core:1.13.1'
+          }
+          GRADLE
+
+          cat > app/src/main/res/values/strings.xml <<'XML'
+          <resources>
+              <string name="app_name">عدد روزانه</string>
+          </resources>
+          XML
+
+          cat > app/src/main/res/values/styles.xml <<'XML'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:windowLightStatusBar">false</item>
+                  <item name="android:statusBarColor">#10002B</item>
+                  <item name="android:navigationBarColor">#0A001C</item>
+                  <item name="android:colorAccent">#C77DFF</item>
+                  <item name="android:windowActionModeOverlay">true</item>
+              </style>
+          </resources>
+          XML
+
+          cat > app/src/main/res/xml/file_paths.xml <<'XML'
+          <paths xmlns:android="http://schemas.android.com/apk/res/android">
+              <files-path name="files" path="." />
+              <cache-path name="cache" path="." />
+              <external-files-path name="external_files" path="." />
+          </paths>
+          XML
+
+          cat > app/src/main/AndroidManifest.xml <<'XML'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application android:theme="@style/AppTheme" android:label="@string/app_name" android:icon="@drawable/ic_launcher" android:allowBackup="true" android:supportsRtl="true">
+                  <activity android:name=".MainActivity" android:screenOrientation="portrait" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <activity android:name=".EntryActivity" android:screenOrientation="portrait" android:exported="false" />
+                  <provider android:name="androidx.core.content.FileProvider" android:authorities="com.example.dailynumber.fileprovider" android:exported="false" android:grantUriPermissions="true">
+                      <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+                  </provider>
+              </application>
+          </manifest>
+          XML
+
+          cat > app/src/main/java/com/example/dailynumber/MainActivity.java <<'JAVA'
+          package com.example.dailynumber;
+
+          import android.app.*;
+          import android.os.*;
+          import android.content.*;
+          import android.graphics.*;
+          import android.graphics.drawable.GradientDrawable;
+          import android.view.*;
+          import android.view.inputmethod.InputMethodManager;
+          import android.widget.*;
+          import java.util.*;
+          import org.json.*;
+
+          public class MainActivity extends Activity {
+              protected boolean secondPage=false;
+              private SharedPreferences prefs;
+              private JSONObject data;
+              private EditText input;
+              private TextView dateText,totalText;
+              private LinearLayout list;
+              private String selectedKey;
+
+              private int purple=Color.rgb(90,35,160);
+              private int deep=Color.rgb(16,0,43);
+              private int neon=Color.rgb(199,125,255);
+              private int blue=Color.rgb(76,201,240);
+              private int gold=Color.rgb(255,209,102);
+              private int white=Color.WHITE;
+
+              @Override public void onCreate(Bundle b){
+                  super.onCreate(b);
+                  getWindow().setStatusBarColor(Color.rgb(16,0,43));
+                  getWindow().setNavigationBarColor(Color.rgb(8,0,24));
+                  load();
+                  showMain();
+              }
+
+              private void load(){
+                  try{data=new JSONObject(prefs().getString("data","{}"));}
+                  catch(Exception e){data=new JSONObject();}
+              }
+              private SharedPreferences prefs(){
+                  if(prefs==null) prefs=getSharedPreferences("daily_number",MODE_PRIVATE);
+                  return prefs;
+              }
+              private void save(){prefs().edit().putString("data",data.toString()).apply();}
+
+              private GradientDrawable bg(int[] colors,float radius){
+                  GradientDrawable g=new GradientDrawable(GradientDrawable.Orientation.TL_BR,colors);
+                  g.setCornerRadius(radius);
+                  return g;
+              }
+              private GradientDrawable solid(int color,float radius){
+                  GradientDrawable g=new GradientDrawable();
+                  g.setColor(color);g.setCornerRadius(radius);
+                  g.setStroke(2,Color.argb(70,255,255,255));
+                  return g;
+              }
+              private TextView tv(String s,float size,int color){
+                  TextView v=new TextView(this);
+                  v.setText(s);v.setTextSize(size);v.setTextColor(color);
+                  v.setGravity(Gravity.CENTER);
+                  v.setPadding(10,8,10,8);
+                  return v;
+              }
+              private Button neonButton(String s,int c1,int c2){
+                  return neonButton(s,16,c1,c2);
+              }
+              private Button neonButton(String s,float size,int c1,int c2){
+                  Button b=new Button(this);
+                  b.setText(s);b.setTextSize(size);b.setTextColor(Color.WHITE);
+                  b.setAllCaps(false);
+                  b.setMinHeight(0);
+                  b.setMinimumHeight(0);
+                  b.setPadding(8,0,8,0);
+                  b.setBackground(bg(new int[]{c1,c2},26));
+                  return b;
+              }
+              private TextView footer(){
+                  TextView f=tv("توسعه دهنده مهرداد میرزایی",13,Color.rgb(225,205,255));
+                  f.setPadding(6,10,6,8);
+                  return f;
+              }
+
+              private void showMain(){
+                  LinearLayout root=new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setPadding(14,14,14,14);
+                  root.setBackground(bg(new int[]{Color.rgb(8,0,30),Color.rgb(38,0,83),Color.rgb(8,0,30)},0));
+
+                  ScrollView outer=new ScrollView(this);
+                  outer.setFillViewport(true);
+                  LinearLayout content=new LinearLayout(this);
+                  content.setOrientation(LinearLayout.VERTICAL);
+                  content.setPadding(4,10,4,20);
+                  outer.addView(content);
+
+                  // Header inspired by the supplied neon reference image.
+                  LinearLayout hero=new LinearLayout(this);
+                  hero.setOrientation(LinearLayout.VERTICAL);
+                  hero.setGravity(Gravity.CENTER);
+                  hero.setPadding(16,24,16,24);
+                  hero.setBackground(bg(new int[]{Color.rgb(91,28,170),Color.rgb(28,0,72),Color.rgb(123,44,191)},32));
+                  TextView icon=tv("✓",48,Color.WHITE);
+                  icon.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+                  hero.addView(icon,new LinearLayout.LayoutParams(-1,58));
+                  TextView title=tv("عدد روزانه",30,Color.WHITE);
+                  title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+                  hero.addView(title);
+                  TextView sub=tv("ثبت روزانه اعداد با تاریخ شمسی",15,Color.rgb(235,220,255));
+                  hero.addView(sub);
+                  content.addView(hero,new LinearLayout.LayoutParams(-1,-2));
+
+                  Space sp=new Space(this);
+                  content.addView(sp,new LinearLayout.LayoutParams(1,18));
+
+                  LinearLayout totalBox=new LinearLayout(this);
+                  totalBox.setOrientation(LinearLayout.VERTICAL);
+                  totalBox.setGravity(Gravity.CENTER);
+                  totalBox.setPadding(10,16,10,16);
+                  totalBox.setBackground(bg(new int[]{Color.rgb(34,0,78),Color.rgb(86,22,153)},28));
+                  TextView totalCaption=tv("جمع کل ثبت‌شده",14,Color.rgb(220,200,255));
+                  totalBox.addView(totalCaption);
+                  totalText=tv("",34,Color.WHITE);
+                  totalText.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+                  totalBox.addView(totalText);
+                  content.addView(totalBox,new LinearLayout.LayoutParams(-1,-2));
+
+                  LinearLayout pageBtns=new LinearLayout(this);
+                  pageBtns.setPadding(0,18,0,18);
+                  Button next=neonButton(secondPage ? "◀  صفحه اول" : "صفحه دوم  ▶",Color.rgb(126,34,255),Color.rgb(63,81,181));
+                  pageBtns.addView(next,new LinearLayout.LayoutParams(0,62,1));
+                  content.addView(pageBtns);
+                  next.setOnClickListener(v->{
+                      if(secondPage) finish();
+                      else startActivity(new Intent(this,EntryActivity.class));
+                  });
+
+                  // DATE CARD - fixed height and generous margins prevent overlap.
+                  LinearLayout dateCard=new LinearLayout(this);
+                  dateCard.setOrientation(LinearLayout.VERTICAL);
+                  dateCard.setGravity(Gravity.CENTER_HORIZONTAL);
+                  dateCard.setPadding(14,14,14,14);
+                  dateCard.setBackground(bg(new int[]{Color.rgb(35,0,78),Color.rgb(56,10,110)},24));
+                  TextView dateTitle=tv("تاریخ انتخاب‌شده",16,Color.rgb(220,190,255));
+                  dateTitle.setGravity(Gravity.CENTER);
+                  dateCard.addView(dateTitle,new LinearLayout.LayoutParams(-1,40));
+                  LinearLayout dateRow=new LinearLayout(this);
+                  dateRow.setOrientation(LinearLayout.HORIZONTAL);
+                  dateRow.setGravity(Gravity.CENTER_VERTICAL);
+                  dateText=tv("",22,Color.WHITE);
+                  dateText.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+                  dateText.setGravity(Gravity.CENTER);
+                  Button choose=neonButton("تاریخ",16,Color.rgb(112,48,190),Color.rgb(92,55,175));
+                  LinearLayout.LayoutParams dateTextLp=new LinearLayout.LayoutParams(0,58,1);
+                  dateTextLp.setMargins(0,8,8,0);
+                  LinearLayout.LayoutParams chooseLp=new LinearLayout.LayoutParams(110,52);
+                  chooseLp.setMargins(0,8,0,0);
+                  dateRow.addView(dateText,dateTextLp);
+                  dateRow.addView(choose,chooseLp);
+                  dateCard.addView(dateRow,new LinearLayout.LayoutParams(-1,66));
+                  LinearLayout.LayoutParams dateLp=new LinearLayout.LayoutParams(-1,138);
+                  dateLp.setMargins(0,20,0,20);
+                  content.addView(dateCard,dateLp);
+                  choose.setOnClickListener(v->pickDate());
+
+                  // ENTRY CARD - its own card, separated from date and registered-days sections.
+                  LinearLayout entryCard=new LinearLayout(this);
+                  entryCard.setOrientation(LinearLayout.VERTICAL);
+                  entryCard.setGravity(Gravity.CENTER_HORIZONTAL);
+                  entryCard.setPadding(14,14,14,14);
+                  entryCard.setBackground(bg(new int[]{Color.rgb(35,0,78),Color.rgb(56,10,110)},24));
+                  TextView inputTitle=tv("ورود عدد",16,Color.rgb(220,190,255));
+                  inputTitle.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+                  entryCard.addView(inputTitle,new LinearLayout.LayoutParams(-1,38));
+                  input=new EditText(this);
+                  input.setHint("عدد را وارد کنید");
+                  input.setHintTextColor(Color.rgb(200,180,225));
+                  input.setTextColor(Color.WHITE);
+                  input.setTextSize(23);
+                  input.setGravity(Gravity.CENTER);
+                  input.setInputType(2);
+                  input.setSingleLine(true);
+                  input.setPadding(15,8,15,8);
+                  input.setBackground(solid(Color.rgb(45,7,90),22));
+                  LinearLayout.LayoutParams inpLp=new LinearLayout.LayoutParams(-1,58);
+                  inpLp.setMargins(0,10,0,16);
+                  entryCard.addView(input,inpLp);
+                  LinearLayout actions=new LinearLayout(this);
+                  actions.setOrientation(LinearLayout.HORIZONTAL);
+                  actions.setGravity(Gravity.CENTER);
+                  Button reset=neonButton("ریست",15,Color.rgb(18,0,40),Color.rgb(65,15,115));
+                  Button edit=neonButton("اصلاح",15,Color.rgb(109,25,180),Color.rgb(140,40,220));
+                  Button add=neonButton("ثبت",15,Color.rgb(0,110,255),Color.rgb(20,190,255));
+                  LinearLayout.LayoutParams rlp=new LinearLayout.LayoutParams(0,56,1);
+                  rlp.setMargins(0,0,6,0);
+                  LinearLayout.LayoutParams elp=new LinearLayout.LayoutParams(0,56,1);
+                  elp.setMargins(3,0,3,0);
+                  LinearLayout.LayoutParams alp=new LinearLayout.LayoutParams(0,56,1);
+                  alp.setMargins(6,0,0,0);
+                  actions.addView(reset,rlp);
+                  actions.addView(edit,elp);
+                  actions.addView(add,alp);
+                  entryCard.addView(actions,new LinearLayout.LayoutParams(-1,56));
+                  LinearLayout.LayoutParams entryLp=new LinearLayout.LayoutParams(-1,198);
+                  entryLp.setMargins(0,0,0,20);
+                  content.addView(entryCard,entryLp);
+                  add.setOnClickListener(v->saveValue());
+                  edit.setOnClickListener(v->saveValue());
+                  reset.setOnClickListener(v->resetAll());
+
+                  TextView h=tv("روزهای ثبت‌شده",23,Color.WHITE);
+                  h.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+                  h.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+                  h.setPadding(16,14,16,12);
+                  h.setBackground(bg(new int[]{Color.rgb(51,5,106),Color.rgb(90,25,160)},24));
+                  LinearLayout.LayoutParams hLp=new LinearLayout.LayoutParams(-1,62);
+                  hLp.setMargins(0,0,0,18);
+                  content.addView(h,hLp);
+
+                  list=new LinearLayout(this);
+                  list.setOrientation(LinearLayout.VERTICAL);
+                  list.setPadding(0,0,0,0);
+                  LinearLayout.LayoutParams listLp=new LinearLayout.LayoutParams(-1,-2);
+                  listLp.setMargins(0,0,0,0);
+                  content.addView(list,listLp);
+
+                  Space footerGap=new Space(this);
+                  content.addView(footerGap,new LinearLayout.LayoutParams(1,20));
+                  content.addView(footer());
+
+                  root.addView(outer,new LinearLayout.LayoutParams(-1,0,1));
+                  setContentView(root);
+                  selectToday();
+                  refresh();
+              }
+
+              private void selectToday(){
+                  Calendar c=Calendar.getInstance();
+                  selectedKey=key(c.get(Calendar.YEAR),c.get(Calendar.MONTH)+1,c.get(Calendar.DAY_OF_MONTH));
+                  showSelected();
+              }
+
+              private String key(int y,int m,int d){return String.format(Locale.US,"%04d-%02d-%02d",y,m,d);}
+              private long num(String k){try{return data.getLong(k);}catch(Exception e){return 0;}}
+              private ArrayList<String> keys(){
+                  ArrayList<String>a=new ArrayList<>();
+                  Iterator<String>it=data.keys();
+                  while(it.hasNext())a.add(it.next());
+                  return a;
+              }
+              private void showSelected(){
+                  dateText.setText(jalaliFromKey(selectedKey));
+                  try{input.setText(data.has(selectedKey)?String.valueOf(data.getLong(selectedKey)):"");}
+                  catch(Exception e){input.setText("");}
+              }
+
+              private void pickDate(){
+                  int[] j=gregToJalali(selectedKey);
+                  LinearLayout box=new LinearLayout(this);
+                  box.setGravity(Gravity.CENTER);
+                  box.setPadding(8,8,8,8);
+                  NumberPicker y=new NumberPicker(this),m=new NumberPicker(this),d=new NumberPicker(this);
+                  y.setMinValue(1300);y.setMaxValue(1500);y.setValue(j[0]);
+                  m.setMinValue(1);m.setMaxValue(12);m.setValue(j[1]);
+                  d.setMinValue(1);d.setMaxValue(31);d.setValue(j[2]);
+                  box.addView(y);box.addView(m);box.addView(d);
+                  AlertDialog dlg=new AlertDialog.Builder(this)
+                      .setTitle("انتخاب تاریخ شمسی")
+                      .setView(box)
+                      .setNegativeButton("لغو",null)
+                      .setPositiveButton("انتخاب",null).create();
+                  dlg.setOnShowListener(x->dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+                      int[] g=jalaliToGreg(y.getValue(),m.getValue(),d.getValue());
+                      if(g==null){Toast.makeText(this,"تاریخ نامعتبر است",Toast.LENGTH_SHORT).show();return;}
+                      selectedKey=key(g[0],g[1],g[2]);showSelected();dlg.dismiss();
+                  }));
+                  dlg.show();
+              }
+
+              private void saveValue(){
+                  String s=input.getText().toString().trim();
+                  if(s.isEmpty()){Toast.makeText(this,"لطفاً عدد را وارد کنید",Toast.LENGTH_SHORT).show();return;}
+                  try{
+                      long n=Long.parseLong(s);
+                      if(n<0)throw new Exception();
+                      data.put(selectedKey,n);save();refresh();
+                      Toast.makeText(this,"برای "+jalaliFromKey(selectedKey)+" ثبت شد",Toast.LENGTH_SHORT).show();
+                  }catch(Exception e){Toast.makeText(this,"عدد واردشده صحیح نیست",Toast.LENGTH_SHORT).show();}
+              }
+
+              private void resetAll(){
+                  new AlertDialog.Builder(this).setTitle("ریست اطلاعات")
+                      .setMessage("همه اطلاعات حذف شوند؟")
+                      .setNegativeButton("لغو",null)
+                      .setPositiveButton("حذف",(d,w)->{
+                          data=new JSONObject();save();input.setText("");refresh();
+                          Toast.makeText(this,"همه اطلاعات پاک شد",Toast.LENGTH_SHORT).show();
+                      }).show();
+              }
+
+              private void refresh(){
+                  list.removeAllViews();
+                  long total=0;ArrayList<String>ks=keys();
+                  for(String k:ks)total+=num(k);
+                  totalText.setText(String.valueOf(total));
+                  if(ks.isEmpty()){
+                      TextView e=tv("هنوز عددی ثبت نشده است",16,Color.rgb(220,205,240));
+                      e.setPadding(18,30,18,30);
+                      e.setBackground(solid(Color.rgb(34,0,72),22));
+                      list.addView(e);return;
+                  }
+                  Collections.sort(ks,Collections.reverseOrder());
+                  for(String k:ks){
+                      LinearLayout row=new LinearLayout(this);
+                      row.setGravity(Gravity.CENTER_VERTICAL);
+                      row.setPadding(10,10,10,10);
+                      row.setBackground(solid(Color.rgb(31,0,66),20));
+                      TextView d=tv(jalaliFromKey(k),17,Color.WHITE);
+                      TextView v=tv(String.valueOf(num(k)),20,Color.WHITE);
+                      d.setGravity(Gravity.CENTER);v.setGravity(Gravity.CENTER);
+                      v.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+                      row.addView(d,new LinearLayout.LayoutParams(0,64,1));
+                      row.addView(v,new LinearLayout.LayoutParams(0,64,1));
+                      LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+                      lp.setMargins(0,10,0,10);
+                      list.addView(row,lp);
+                      row.setOnClickListener(x->{selectedKey=k;showSelected();input.requestFocus();});
+                  }
+              }
+
+              private String jalaliFromKey(String k){
+                  String[]p=k.split("-");
+                  return jalali(Integer.parseInt(p[0]),Integer.parseInt(p[1]),Integer.parseInt(p[2]));
+              }
+              private String jalali(int gy,int gm,int gd){
+                  int[]gdm={0,31,28,31,30,31,30,31,31,30,31,30,31};
+                  int gy2=gy-1600,gm2=gm-1,gd2=gd-1;
+                  long gDay=365L*gy2+(gy2+3)/4-(gy2+99)/100+(gy2+399)/400;
+                  for(int i=0;i<gm2;i++)gDay+=gdm[i+1];
+                  if(gm2>1&&((gy%4==0&&gy%100!=0)||gy%400==0))gDay++;
+                  gDay+=gd2;
+                  long jDay=gDay-79,jNp=jDay/12053;jDay%=12053;
+                  int jy=(int)(979+33*jNp+4*(jDay/1461));jDay%=1461;
+                  if(jDay>=366){jy+=(int)((jDay-1)/365);jDay=(jDay-1)%365;}
+                  int jm=jDay<186?1+(int)(jDay/31):7+(int)((jDay-186)/30);
+                  int jd=1+(int)(jDay<186?jDay%31:(jDay-186)%30);
+                  return String.format(Locale.US,"%04d/%02d/%02d",jy,jm,jd);
+              }
+              private int[] gregToJalali(String k){
+                  String[]p=k.split("-");
+                  String[]j=jalali(Integer.parseInt(p[0]),Integer.parseInt(p[1]),Integer.parseInt(p[2])).split("/");
+                  return new int[]{Integer.parseInt(j[0]),Integer.parseInt(j[1]),Integer.parseInt(j[2])};
+              }
+              private int[] jalaliToGreg(int jy,int jm,int jd){
+                  if(jm<1||jm>12||jd<1||jd>31)return null;
+                  int jy2=jy-979;
+                  long jDay=365L*jy2+(jy2/33)*8+((jy2%33)+3)/4;
+                  if(jm<=6)jDay+=(jm-1)*31;else jDay+=(jm-7)*30+186;
+                  jDay+=jd-1;
+                  long gDay=jDay+79;
+                  int gy=1600+400*(int)(gDay/146097);gDay%=146097;
+                  boolean leap=true;
+                  if(gDay>=36525){gDay--;gy+=100*(int)(gDay/36524);gDay%=36524;if(gDay>=365)gDay++;}
+                  gy+=4*(int)(gDay/1461);gDay%=1461;
+                  if(gDay>=366){leap=false;gDay--;gy+=(int)(gDay/365);gDay%=365;}
+                  int[]md={31,leap?29:28,31,30,31,30,31,31,30,31,30,31};
+                  int gm=1;while(gm<=12&&gDay>=md[gm-1]){gDay-=md[gm-1];gm++;}
+                  return new int[]{gy,gm,(int)gDay+1};
+              }
+          }
+          JAVA
+
+          cat > app/src/main/java/com/example/dailynumber/EntryActivity.java <<'JAVA'
+          package com.example.dailynumber;
+          public class EntryActivity extends MainActivity {
+              @Override public void onCreate(android.os.Bundle b){ secondPage=true; super.onCreate(b); }
+          }
+          JAVA
+
+
+
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Verify AndroidX
+        shell: bash
+        run: |
+          set -e
+          echo '--- gradle.properties ---'
+          cat gradle.properties
+          echo '--- app/build.gradle ---'
+          cat app/build.gradle
+          test "$(grep -c '^android.useAndroidX=true$' gradle.properties)" = "1"
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -e
+          gradle assembleDebug --no-daemon --stacktrace \
+            -Pandroid.useAndroidX=true \
+            -Pandroid.enableJetifier=true
+
+      - name: Check APK
+        shell: bash
+        run: |
+          set -e
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DailyNumber-Neon-V33-SPACED-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
